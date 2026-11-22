@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { chat, LLMError } from './llm.js';
 import { STORE_SYSTEM_PROMPT,FEW_SHOT } from './prompts.js';
+import { classifyMessage } from './classify.js';
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -29,6 +30,24 @@ app.post('/chat', async (req, res, next) => {
     });
 
     res.json({ reply: text, usage });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/classify', async (req, res, next) => {
+  try {
+    const { message } = req.body ?? {};
+
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'message is required (non-empty text)' });
+    }
+    if (message.length > 1000) {
+      return res.status(400).json({ error: 'message is too long (max 1000 characters)' });
+    }
+
+    const result = await classifyMessage(message.trim());
+    res.json(result);
   } catch (err) {
     next(err);
   }

@@ -13,17 +13,18 @@ export class LLMError extends Error {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-export async function chat({ system, messages, temperature = 0.3, maxTokens = 600 }) {
+export async function chat({ system, messages, temperature = 0.3, maxTokens = 600,responseFormat }) {
   if (!process.env.GROQ_API_KEY) {
     throw new LLMError('GROQ_API_KEY is missing', 500);
   }
 
   const body = {
-    model: MODEL,
-    messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages],
-    temperature,
-    max_completion_tokens: maxTokens,
-  };
+  model: MODEL,
+  messages: [...(system ? [{ role: 'system', content: system }] : []), ...messages],
+  temperature,
+  max_completion_tokens: maxTokens,
+  ...(responseFormat ? { response_format: responseFormat } : {}),
+};
 
   const maxRetries = 3;
 
