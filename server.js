@@ -3,6 +3,10 @@ import express from 'express';
 import { chat, LLMError } from './llm.js';
 import { STORE_SYSTEM_PROMPT,FEW_SHOT } from './prompts.js';
 import { classifyMessage } from './classify.js';
+import { randomUUID } from 'node:crypto';
+import { connectDB } from './db.js';
+import { getHistory, appendMessages } from './conversations.js';
+import { trimHistory } from './history.js';
 
 const app = express();
 app.use(express.json({ limit: '10kb' }));
@@ -15,7 +19,7 @@ app.get('/health', (req, res) => {
 
 app.post('/chat', async (req, res, next) => {
   try {
-    const { message } = req.body ?? {};
+    const { message, sessionId: incomingId } = req.body ?? {};
 
     if (typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'message is required (non-empty text)' });
@@ -24,12 +28,26 @@ app.post('/chat', async (req, res, next) => {
       return res.status(400).json({ error: 'message is too long (max 1000 characters)' });
     }
 
+    const isValidId =
+      typeof incomingId === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(incomingId);
+    const sessionId = isValidId ? incomingId : randomUUID();
+
+    const history = await getHistory(sessionId);
+    const userMsg = { role: 'user', content: message.trim() };
+
     const { text, usage } = await chat({
       system: STORE_SYSTEM_PROMPT,
-      messages: [FEW_SHOT,{ role: 'user', content: message.trim() }],
+      messages: [...FEW_SHOT, ...trimHistory(history, 12), userMsg],
     });
 
-    res.json({ reply: text, usage });
+    if (!text.trim()) {
+      return res.status(502).json({ error: 'Empty reply from AI, please try again' });
+    }
+
+    await appendMessages(sessionId, [userMsg, { role: 'assistant', content: text }]);
+
+    res.json({ reply: text, sessionId, usage });
   } catch (err) {
     next(err);
   }
@@ -68,4 +86,5 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
+await connectDB();
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
