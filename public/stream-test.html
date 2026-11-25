@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Stream test</title>
+<input id="msg" value="Suggest a gift T-shirt for a programmer" style="width:70%" />
+<button id="go">Send</button>
+<pre id="out" style="white-space:pre-wrap"></pre>
+
+<script>
+  let sessionId = null;
+  const out = document.getElementById('out');
+
+  document.getElementById('go').onclick = async () => {
+    out.textContent = '';
+    const t0 = performance.now();
+let chunks = 0;
+let firstMs = null;
+    const res = await fetch('/chat/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: document.getElementById('msg').value, sessionId }),
+    });
+
+    if (!res.ok) {
+      out.textContent = 'Error ' + res.status;
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split('\n\n');
+      buffer = events.pop();
+
+      for (const ev of events) {
+        if (!ev.startsWith('data:')) continue;
+        const data = JSON.parse(ev.slice(5).trim());
+        if (data.delta) out.textContent += data.delta;
+        if (data.sessionId) sessionId = data.sessionId;
+        if (data.error) out.textContent += '\n[error] ' + data.error;
+      }
+    }
+  };
+</script>
